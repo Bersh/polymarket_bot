@@ -5,8 +5,12 @@ from datetime import datetime, timezone
 
 from polymarket_bot.engine import run_backtest
 from polymarket_bot.output import print_results
-from polymarket_bot.strategies.base import StrategyConfig
+from polymarket_bot.strategies.base import Strategy, StrategyConfig
+from polymarket_bot.strategies.late_conviction import LateConvictionStrategy
 from polymarket_bot.strategies.low_odds_contra import LowOddsContraStrategy
+from polymarket_bot.strategies.mean_reversion import MeanReversionStrategy
+from polymarket_bot.strategies.momentum import MomentumStrategy
+from polymarket_bot.strategies.volatility_breakout import VolatilityBreakoutStrategy
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -39,8 +43,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--strategy",
         default="low_odds_contra",
-        choices=["low_odds_contra"],
+        choices=[
+            "low_odds_contra",
+            "momentum",
+            "mean_reversion",
+            "late_conviction",
+            "volatility_breakout",
+        ],
         help="Strategy to backtest (default: low_odds_contra)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Bypass local cache and re-fetch from API",
     )
     parser.add_argument(
         "--verbose",
@@ -50,7 +65,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _make_strategy(args: argparse.Namespace) -> LowOddsContraStrategy:
+def _make_strategy(args: argparse.Namespace) -> Strategy:
     config = StrategyConfig(
         bet_amount=args.bet,
         start_date=datetime.strptime(args.start, "%Y-%m-%d").replace(
@@ -58,9 +73,17 @@ def _make_strategy(args: argparse.Namespace) -> LowOddsContraStrategy:
         ),
         end_date=datetime.strptime(args.end, "%Y-%m-%d").replace(tzinfo=timezone.utc),
     )
-    if args.strategy == "low_odds_contra":
-        return LowOddsContraStrategy(config)
-    raise ValueError(f"Unknown strategy: {args.strategy}")
+    strategies: dict[str, type[Strategy]] = {
+        "low_odds_contra": LowOddsContraStrategy,
+        "momentum": MomentumStrategy,
+        "mean_reversion": MeanReversionStrategy,
+        "late_conviction": LateConvictionStrategy,
+        "volatility_breakout": VolatilityBreakoutStrategy,
+    }
+    cls = strategies.get(args.strategy)
+    if cls is None:
+        raise ValueError(f"Unknown strategy: {args.strategy}")
+    return cls(config)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -77,6 +100,7 @@ def main(argv: list[str] | None = None) -> None:
         end_date=args.end,
         min_volume=args.min_volume,
         verbose=args.verbose,
+        use_cache=not args.no_cache,
     )
 
     print_results(result, verbose=args.verbose)
